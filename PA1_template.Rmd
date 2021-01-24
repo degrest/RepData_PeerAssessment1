@@ -1,25 +1,221 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+author: "degrest"
+date: "January 24, 2021"
+output: html_document
+keep_md: true
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### **Disclaimer**: I uploaded the Markdown document first since it is easier to read and grade, the **GitHub repository** is available at:
+
+#### [https://github.com/degrest/RepData_PeerAssessment1](https://github.com/degrest/RepData_PeerAssessment1).
+
+## Introduction
+In this research assignment I will produce an R Markdown document and a GitHub repository in which I analyze "Activity monitoring data.zip".
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement -- a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
 
 ## Loading and preprocessing the data
 
+Data is collected with 5 minutes intervals and in order to analyze it first we need to load it and transform it.
 
+First I load the libraries:
+```{r}
+library(knitr)
+library(data.table)
+library(ggplot2)
+```
+Then load the data as dataframe:
+```{r}
+rdata <- read.csv('activity.csv', header = TRUE, sep = ",",
+                  colClasses=c("numeric", "character", "numeric"))
+```
+
+
+```{r}
+
+rdata$date <- as.Date(rdata$date, format = "%Y-%m-%d")
+rdata$interval <- as.factor(rdata$interval)
+
+```
+
+And check the final result:
+
+```{r}
+str(rdata)
+```
 
 ## What is mean total number of steps taken per day?
 
+If we ignore the NA values and compute the total steps per day:
+```{r}
+steps_per_day <- aggregate(steps ~ date, rdata, sum)
+colnames(steps_per_day) <- c("date","steps")
+head(steps_per_day)
+```
 
+The histogram using ggplot and bin size=1000 is:
+```{r}
+ggplot(steps_per_day, aes(x = steps)) + 
+       geom_histogram(fill = "#3399FF", binwidth = 1000) + 
+        labs(title="Histogram of Steps Taken per Day", 
+             x = "Number of Steps per Day", y = "Number of times in a day") + theme_bw() 
+```
+
+**Mean**, **median** and **standard deviation** are computed using:
+```{r}
+steps_mean   <- mean(steps_per_day$steps, na.rm=TRUE) 
+steps_median <- median(steps_per_day$steps, na.rm=TRUE)
+steps_std <- sd(steps_per_day$steps, na.rm = TRUE)
+```
+
+**Mean**: `r steps_median` 
+
+**Median**: `r steps_median`
+
+**SD**: `r steps_std`
 
 ## What is the average daily activity pattern?
+The average daily pattern shows the average daily steps across all days:
+```{r}
+steps_per_interval <- aggregate(rdata$steps, 
+                                by = list(interval = rdata$interval),
+                                FUN=mean, na.rm=TRUE)
 
+#convert to integers for an easier plotting
+steps_per_interval$interval <- 
+        as.integer(levels(steps_per_interval$interval)[steps_per_interval$interval])
+colnames(steps_per_interval) <- c("interval", "steps")
 
+#plot
+ggplot(steps_per_interval, aes(x=interval, y=steps)) +   
+        geom_line(color="#0066CC", size=1) +  
+        labs(title="Average Daily Activity", x="Interval", y="Number of steps") +  
+        theme_bw()
+
+```
+
+Now, which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps? 
+
+```{r}
+max_interval <- steps_per_interval[which.max(  
+        steps_per_interval$steps),]
+
+max_interval
+```
+And we see from the results that the **835th** interval has a maximum value of **206** steps.
 
 ## Imputing missing values
+First I would like to investigate on the number of NA values:
+```{r}
+missing_vals <- sum(is.na(rdata$steps))
+```
+And the NA values are **`r missing_vals`**.
 
+My strategy is to replace them with averages of that day. And using the fill_na function, we get the index of a missing values and then replace it with the average at the same interval.
+```{r}
+fill_na <- function(data, pervalue) {
+        na_index <- which(is.na(data$steps))
+        na_replace <- unlist(lapply(na_index, FUN=function(idx){
+                interval = data[idx,]$interval
+                pervalue[pervalue$interval == interval,]$steps
+        }))
+        fill_steps <- data$steps
+        fill_steps[na_index] <- na_replace
+        fill_steps
+}
 
+rdata_filled <- data.frame(  
+        steps = fill_na(rdata, steps_per_interval),  
+        date = rdata$date,  
+        interval = rdata$interval)
+str(rdata_filled)
+
+```
+
+Now if we check for NA values we can see that all of them have been filled:
+```{r}
+sum(is.na(rdata_filled$steps))
+
+```
+Missing values: **`r sum(is.na(rdata_filled$steps))`**.
+
+And if we plot again after filling missing values we get the following histogram:
+```{r}
+fill_steps_per_day <- aggregate(steps ~ date, rdata_filled, sum)
+colnames(fill_steps_per_day) <- c("date","steps")
+
+##plotting the histogram
+ggplot(fill_steps_per_day, aes(x = steps)) + 
+       geom_histogram(fill = "#0066CC", binwidth = 1000) + 
+        labs(title="Steps Taken per Day - NA filled", 
+             x = "Number of Steps per Day", y = "Number of times in a day") + theme_bw() 
+
+```
+
+Also mean and median are very close:
+```{r}
+steps_mean_filled   <- mean(fill_steps_per_day$steps, na.rm=TRUE)
+steps_median_filled <- median(fill_steps_per_day$steps, na.rm=TRUE)
+steps_std_filled <- sd(fill_steps_per_day$steps, na.rm = TRUE)
+```
+**Mean**: `r steps_mean_filled` 
+
+**Median**: `r steps_median_filled`
+
+**SD**: `r steps_std_filled`
+
+And from the before and after histograms we can see that after filling missing values the peak of the distribution is now taller.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+To assess whether there are differences between weekdays and weekends we need to build two datasets, where steps taken are differentiated by the type of day. By using the subset function we create two dataframes:where weekday **is** Saturday or Sunday and where weekday **is not** Saturday or Sunday. 
+```{r}
+weekdays_steps <- function(data) {
+    weekdays_steps <- aggregate(data$steps, by=list(interval = data$interval),
+                          FUN=mean, na.rm=T)
+    # convert to integers for plotting
+    weekdays_steps$interval <- 
+            as.integer(levels(weekdays_steps$interval)[weekdays_steps$interval])
+    colnames(weekdays_steps) <- c("interval", "steps")
+    weekdays_steps
+}
+
+data_by_weekdays <- function(data) {
+    data$weekday <- 
+            as.factor(weekdays(data$date)) # weekdays
+    weekend_data <- subset(data, weekday %in% c("Saturday","Sunday"))
+    weekday_data <- subset(data, !weekday %in% c("Saturday","Sunday"))
+
+    weekend_steps <- weekdays_steps(weekend_data)
+    weekday_steps <- weekdays_steps(weekday_data)
+
+    weekend_steps$dayofweek <- rep("weekend", nrow(weekend_steps))
+    weekday_steps$dayofweek <- rep("weekday", nrow(weekday_steps))
+
+    data_by_weekdays <- rbind(weekend_steps, weekday_steps)
+    data_by_weekdays$dayofweek <- as.factor(data_by_weekdays$dayofweek)
+    data_by_weekdays
+}
+
+data_weekdays <- data_by_weekdays(rdata_filled)
+
+```
+
+
+After I plot the two subsets using ggplot.
+
+```{r}
+ggplot(data_weekdays, aes(x=interval, y=steps)) + 
+        geom_line(color="#0066CC") + 
+        facet_wrap(~ dayofweek, nrow=2, ncol=1) +
+        labs(x="Interval", y="Number of steps") +
+        theme_bw()
+```
+
+And as we can see, more steps are taken during weekends compared to weekdays. During weekdays there is peak at the beginning and then a "more sedentary" pattern
